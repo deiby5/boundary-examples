@@ -1,7 +1,7 @@
 {
-  "name": "boundary-expenses-example",
+  "name": "boundary-receipt-scanner-node",
   "version": "1.0.0",
-  "description": "AI receipt scanner CLI — showcasing @withboundary/contract",
+  "description": "AI receipt scanner CLI - showcasing @withboundary/contract",
   "type": "module",
   "scripts": {
     "build": "tsc",

@@ -14,7 +14,7 @@ from withboundary.contract import (
 )
 from withboundary.sdk import CapturePolicy, create_boundary_logger
 
-MODEL = "mistralai/mistral-small-3.2-24b-instruct"
+MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o")
 
 
 class ReceiptItem(BaseModel):
@@ -22,7 +22,7 @@ class ReceiptItem(BaseModel):
     price: float
 
 
-class Receipt(BaseModel):
+class ReceiptScanResult(BaseModel):
     vendor: str
     date: str
     amount: float
@@ -33,23 +33,20 @@ class Receipt(BaseModel):
     items: list[ReceiptItem] | None = None
 
 
-# --- Boundary SDK logger (remote observability) ---
-
 _boundary_logger = create_boundary_logger(
     api_key=os.environ.get("BOUNDARY_API_KEY"),
+    endpoint=os.environ.get("BOUNDARY_API_URL"),
     environment="production",
     model=MODEL + " (python)",
     on_error=lambda err: print(f"[Boundary] Logger error: {err}"),
-    capture=CapturePolicy(inputs=True, outputs=True),
+    capture=CapturePolicy(inputs=False, outputs=False),
     before_send=lambda event: event.model_copy(update={"schema_": None}),
 )
 
 if _boundary_logger:
-    print("[Boundary] SDK logger initialised — events will be sent to Boundary.")
+    print("[Boundary] SDK logger initialised - events will be sent to Boundary.")
 else:
-    print("[Boundary] BOUNDARY_API_KEY not set — remote logging disabled (console only).")
-
-# --- Console logger (local debug output) ---
+    print("[Boundary] BOUNDARY_API_KEY not set - remote logging disabled (console only).")
 
 _console_logger = create_console_logger(
     prefix="[Boundary]",
@@ -74,17 +71,13 @@ def merge_loggers(*loggers: ContractLogger | None) -> ContractLogger:
     return Merged()  # type: ignore[return-value]
 
 
-_merged_logger = merge_loggers(_boundary_logger, _console_logger)
-
-# --- Business rules ---
-
-positive_amount: Rule[Receipt] = Rule(
+positive_amount: Rule[ReceiptScanResult] = Rule(
     name="positive_amount",
     description="Amount must be a positive number",
     check=lambda r: r.amount > 0 or f"amount must be positive, got {r.amount}",
 )
 
-valid_date: Rule[Receipt] = Rule(
+valid_date: Rule[ReceiptScanResult] = Rule(
     name="valid_date",
     description="Date must be a valid ISO 8601 date string (YYYY-MM-DD)",
     check=lambda r: (
@@ -93,14 +86,14 @@ valid_date: Rule[Receipt] = Rule(
     ),
 )
 
-non_empty_vendor: Rule[Receipt] = Rule(
+non_empty_vendor: Rule[ReceiptScanResult] = Rule(
     name="non_empty_vendor",
     description="Vendor name must not be empty",
     check=lambda r: r.vendor.strip() != "" or "vendor name cannot be empty",
 )
 
 
-def _items_sum_check(r: Receipt) -> bool | str:
+def _items_sum_check(r: ReceiptScanResult) -> bool | str:
     if not r.items:
         return True
     items_sum = sum(item.price for item in r.items)
@@ -115,7 +108,7 @@ def _items_sum_check(r: Receipt) -> bool | str:
     )
 
 
-items_sum_equals_total: Rule[Receipt] = Rule(
+items_sum_equals_total: Rule[ReceiptScanResult] = Rule(
     name="items_sum_equals_total",
     description=(
         "If line items are present, their prices plus any tax must sum to the total amount"
@@ -123,14 +116,11 @@ items_sum_equals_total: Rule[Receipt] = Rule(
     check=_items_sum_check,
 )
 
-# --- Contract ---
-
-receipt_contract = define_contract(
-    name="receipt-extraction-python",
-    schema=Receipt,
-    logger=_merged_logger,
+receipt_scan_contract = define_contract(
+    name="receipt-scanner-python",
+    schema=ReceiptScanResult,
+    logger=merge_loggers(_boundary_logger, _console_logger),
     rules=[positive_amount, valid_date, non_empty_vendor, items_sum_equals_total],
 )
 
-# Expose the SDK logger for flushing on exit
 boundary_logger = _boundary_logger

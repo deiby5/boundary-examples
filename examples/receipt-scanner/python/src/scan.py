@@ -1,5 +1,4 @@
 import base64
-import json
 import os
 from pathlib import Path
 
@@ -7,11 +6,11 @@ import httpx
 
 from withboundary.contract import ContractAttempt, Failure, Success
 
-from .contract import MODEL, Receipt, receipt_contract
+from .contract import MODEL, ReceiptScanResult, receipt_scan_contract
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-PROMPT = """You are an expense-tracking assistant. Extract the expense details from this receipt image and return a single JSON object with exactly these fields:
+SYSTEM_PROMPT = """You are a structured receipt data extractor. Read the attached receipt image and return a JSON object with extracted fields.
 
 - vendor (string, required): the merchant or business name — must not be empty
 - date (string, required): date of the transaction in strict YYYY-MM-DD format
@@ -30,15 +29,32 @@ Critical constraints:
 Return ONLY the raw JSON object — no markdown code fences, no ```json, no explanations, no trailing text."""
 
 
-def scan_receipt(image_path: str) -> Receipt:
+def scan_receipt(image_path: str) -> ReceiptScanResult:
     abs_path = Path(image_path).resolve()
     if not abs_path.exists():
         raise FileNotFoundError(f"File not found: {abs_path}")
+    if abs_path.suffix.lower() != ".png":
+        raise ValueError(f"Unsupported receipt format: {abs_path} (expected .png)")
 
     image_data = abs_path.read_bytes()
     base64_image = base64.b64encode(image_data).decode("utf-8")
     mime_type = "image/png"
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY environment variable is not set.")
+
+    user_content = [
+        {
+            "type": "text",
+            "text": "Extract structured receipt data from the attached receipt image.",
+        },
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{mime_type};base64,{base64_image}",
+            },
+        },
+    ]
 
     print(f'[Boundary] Starting contract run for "{abs_path.name}"...')
 
@@ -55,44 +71,23 @@ def scan_receipt(image_path: str) -> Receipt:
                 " — sending to model..."
             )
 
-        if is_retry:
-            repair_texts = [
-                r["content"] if isinstance(r, dict) else str(r)
-                for r in ctx.repairs
-            ]
-            prompt_text = "\n\n".join([PROMPT] + repair_texts)
-        else:
-            prompt_text = PROMPT
+        system_content = "\n\n".join(
+            item for item in [SYSTEM_PROMPT, getattr(ctx, "instructions", "")] if item
+        )
+
+        messages: list[dict[str, object]] = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+        for repair in ctx.repairs:
+            content = repair["content"] if isinstance(repair, dict) else str(repair)
+            messages.append({"role": "user", "content": content})
 
         body = {
             "model": MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_text},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{base64_image}"
-                            },
-                        },
-                    ],
-                }
-            ],
+            "messages": messages,
+            "temperature": 0,
         }
-
-        def _sanitize_log(obj: object) -> object:
-            """Replace base64 data URIs with a placeholder for readable logs."""
-            if isinstance(obj, dict):
-                return {k: _sanitize_log(v) for k, v in obj.items()}
-            if isinstance(obj, list):
-                return [_sanitize_log(v) for v in obj]
-            if isinstance(obj, str) and obj.startswith("data:image/"):
-                return f"data:{mime_type};base64,<base64_omitted>"
-            return obj
-
-        print(f"[OpenRouter] Request: {json.dumps(_sanitize_log(body), indent=2)}")
 
         try:
             response = httpx.post(
@@ -107,20 +102,18 @@ def scan_receipt(image_path: str) -> Receipt:
             response.raise_for_status()
         except httpx.HTTPStatusError as err:
             print(f"[OpenRouter] Error status: {err.response.status_code}")
-            print(f"[OpenRouter] Error body: {err.response.text}")
+            print(f"[OpenRouter] Error body: {err.response.text[:500]}")
             raise
         except httpx.RequestError as err:
             print(f"[OpenRouter] Request error: {err}")
             raise
 
         data = response.json()
-        print(f"[OpenRouter] Response: {json.dumps(data, indent=2)}")
-
-        content = data["choices"][0]["message"]["content"] or ""
+        content = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
         print(f"[Boundary] Model responded ({len(content)} chars)")
         return content
 
-    result = receipt_contract.accept(run_fn)
+    result = receipt_scan_contract.accept(run_fn)
 
     match result:
         case Success(data=receipt, attempts=attempts, duration_ms=duration_ms):
@@ -136,4 +129,6 @@ def scan_receipt(image_path: str) -> Receipt:
                 for issue in getattr(attempt, "issues", [])
             ]
             print(f"[Boundary] Contract failed after all attempts: {issues}")
-            raise RuntimeError(f"Failed to extract receipt data: {error}")
+            raise RuntimeError(f"Receipt scan output failed validation: {error}")
+
+    raise RuntimeError("Unexpected Boundary result")

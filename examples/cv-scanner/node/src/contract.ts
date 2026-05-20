@@ -6,7 +6,7 @@ import {
 } from "@withboundary/contract";
 import { createBoundaryLogger } from "@withboundary/sdk";
 
-export const MODEL = "openai/gpt-4o-mini";
+export const MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-4o";
 
 const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -15,7 +15,7 @@ const endMonthSchema = z.union([monthSchema, z.literal("Present")]);
 
 export const logger = createBoundaryLogger({
   apiKey: process.env.BOUNDARY_API_KEY,
-  endpoint: process.env.BOUNDARY_API_URL || process.env.BOUNDARY_ENDPOINT,
+  endpoint: process.env.BOUNDARY_API_URL,
   environment: "production",
   model: MODEL + " (node)",
   onError: (err) => console.error("[Boundary] Logger error:", err),

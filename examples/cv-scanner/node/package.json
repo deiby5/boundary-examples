@@ -1,5 +1,5 @@
 {
-  "name": "boundary-cv-scanner-example",
+  "name": "boundary-cv-scanner-node",
   "version": "1.0.0",
   "description": "AI CV scanner CLI - showcasing @withboundary/contract",
   "type": "module",

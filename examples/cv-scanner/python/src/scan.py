@@ -103,7 +103,10 @@ def scan_cv(file_path: str) -> CvScanResult:
             },
         },
     ]
-    print(f'[Boundary] Starting contract run for "{label}"...')
+    print(
+        f'[Boundary] Starting contract run for "{label}" '
+        f"(model: {MODEL}, PDF engine: native)..."
+    )
 
     def run_fn(ctx: ContractAttempt) -> str:
         is_retry = bool(ctx.repairs)

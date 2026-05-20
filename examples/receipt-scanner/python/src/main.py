@@ -9,34 +9,37 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from .contract import boundary_logger  # noqa: E402 — must come after load_dotenv
 from .scan import scan_receipt  # noqa: E402
-from .store import add_expense, list_expenses  # noqa: E402
+from .store import add_scan, list_scans  # noqa: E402
+
+TEST_FILE = (
+    Path(__file__).parent.parent.parent
+    / "fixtures"
+    / "receipts"
+    / "receipt_0001.png"
+)
 
 
-def print_table(expenses: list[dict]) -> None:
-    if not expenses:
-        print("No expenses recorded yet.")
+def print_table(scans: list[dict]) -> None:
+    if not scans:
+        print("No scans recorded yet.")
         return
 
     headers = ["ID", "Date", "Vendor", "Amount", "Category", "Description"]
     print("\n" + "  ".join(h.ljust(18) for h in headers))
     print("-" * 110)
-    for e in expenses:
-        amount_str = f"{e.get('currency', '')} {e['amount']:.2f}"
+    for s in scans:
+        amount_str = f"{s.get('currency', '')} {s['amount']:.2f}"
         print(
             "  ".join([
-                str(e["id"]).ljust(18),
-                e["date"].ljust(18),
-                e["vendor"][:18].ljust(18),
+                str(s["id"]).ljust(18),
+                s["date"].ljust(18),
+                s["vendor"][:18].ljust(18),
                 amount_str.ljust(18),
-                e["category"].ljust(18),
-                e["description"][:40],
+                s["category"].ljust(18),
+                s["description"][:40],
             ])
         )
-
-    total = sum(e["amount"] for e in expenses)
-    currency = expenses[0].get("currency", "") if expenses else ""
-    print("-" * 110)
-    print(f"Total: {currency} {total:.2f}\n")
+    print()
 
 
 def main() -> None:
@@ -67,21 +70,16 @@ def main() -> None:
                 print(f"\nScanning {file}...")
                 try:
                     receipt = scan_receipt(str(file))
-                    expense = add_expense(receipt, str(file))
+                    stored = add_scan(receipt, str(file))
                     print(
-                        f"  Added expense #{expense['id']}: {expense['vendor']}"
-                        f" — {expense['currency']} {expense['amount']:.2f}"
+                        f"  Added scan #{stored['id']}: {stored['vendor']}"
+                        f" — {stored['currency']} {stored['amount']:.2f}"
                     )
                 except Exception as err:
                     print(f"  Failed: {err}")
 
         elif command == "test":
-            test_file = str(
-                Path(__file__).parent.parent.parent
-                / "fixtures"
-                / "receipts"
-                / "receipt_0001.png"
-            )
+            test_file = str(TEST_FILE)
             print(f"Test run: scanning {test_file}...")
 
             print("\n[1/2] OpenRouter API call...")
@@ -93,21 +91,20 @@ def main() -> None:
             print(f"    Category: {receipt.category}")
             print(f"    Note:     {receipt.description}")
 
-            print("\n[2/2] Boundary logging (add_expense writes to store + logs via SDK)...")
-            expense = add_expense(receipt, test_file)
-            print(f"  OK — saved as expense #{expense['id']}, scanned_at: {expense['scanned_at']}")
+            print("\n[2/2] Boundary logging (add_scan writes to store + logs via SDK)...")
+            stored = add_scan(receipt, test_file)
+            print(f"  OK — saved as scan #{stored['id']}, scanned_at: {stored['scanned_at']}")
 
             print("\nTest passed.")
 
         elif command == "list":
-            expenses = list_expenses()
-            print_table(expenses)
+            print_table(list_scans())
 
         else:
             print("Usage:")
             print("  python -m src.main test                          Scan receipt_0001.png and verify both APIs")
             print("  python -m src.main add <receipt.png|folder>      Scan and record a receipt (or all PNGs in a folder)")
-            print("  python -m src.main list                          List all recorded expenses")
+            print("  python -m src.main list                          List all recorded scans")
 
     finally:
         if boundary_logger is not None:

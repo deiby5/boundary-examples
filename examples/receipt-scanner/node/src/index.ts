@@ -1,14 +1,16 @@
 import fs from "fs";
 import path from "path";
-import { scanReceipt } from "./scan.js";
-import { addExpense, listExpenses } from "./store.js";
 import { logger } from "./contract.js";
+import { scanReceipt } from "./scan.js";
+import { addScan, listScans } from "./store.js";
 
 const [, , command, ...args] = process.argv;
 
-function printTable(expenses: ReturnType<typeof listExpenses>) {
-  if (expenses.length === 0) {
-    console.log("No expenses recorded yet.");
+const TEST_FILE = "../fixtures/receipts/receipt_0001.png";
+
+function printTable(scans: ReturnType<typeof listScans>) {
+  if (scans.length === 0) {
+    console.log("No scans recorded yet.");
     return;
   }
   console.log(
@@ -18,21 +20,19 @@ function printTable(expenses: ReturnType<typeof listExpenses>) {
       .join("  ")
   );
   console.log("-".repeat(110));
-  for (const e of expenses) {
+  for (const s of scans) {
     console.log(
       [
-        String(e.id).padEnd(18),
-        e.date.padEnd(18),
-        e.vendor.slice(0, 18).padEnd(18),
-        `${e.currency} ${e.amount.toFixed(2)}`.padEnd(18),
-        e.category.padEnd(18),
-        e.description.slice(0, 40),
+        String(s.id).padEnd(18),
+        s.date.padEnd(18),
+        s.vendor.slice(0, 18).padEnd(18),
+        `${s.currency} ${s.amount.toFixed(2)}`.padEnd(18),
+        s.category.padEnd(18),
+        s.description.slice(0, 40),
       ].join("  ")
     );
   }
-  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-  console.log("-".repeat(110));
-  console.log(`Total: ${expenses[0]?.currency ?? ""} ${total.toFixed(2)}\n`);
+  console.log();
 }
 
 async function main() {
@@ -62,8 +62,11 @@ async function main() {
         console.log(`\nScanning ${file}...`);
         try {
           const receipt = await scanReceipt(file);
-          const expense = addExpense(receipt, file);
-          console.log(`  Added expense #${expense.id}: ${expense.vendor} — ${expense.currency} ${expense.amount.toFixed(2)}`);
+          const stored = addScan(receipt, file);
+          console.log(
+            `  Added scan #${stored.id}: ${stored.vendor} — ` +
+              `${stored.currency} ${stored.amount.toFixed(2)}`,
+          );
         } catch (err) {
           console.error(`  Failed: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -72,11 +75,10 @@ async function main() {
     }
 
     case "test": {
-      const testFile = "../fixtures/receipts/receipt_0001.png";
-      console.log(`Test run: scanning ${testFile}...`);
+      console.log(`Test run: scanning ${TEST_FILE}...`);
 
       console.log("\n[1/2] OpenRouter API call...");
-      const receipt = await scanReceipt(testFile);
+      const receipt = await scanReceipt(TEST_FILE);
       console.log("  OK — extracted:");
       console.log(`    Vendor:   ${receipt.vendor}`);
       console.log(`    Date:     ${receipt.date}`);
@@ -84,17 +86,16 @@ async function main() {
       console.log(`    Category: ${receipt.category}`);
       console.log(`    Note:     ${receipt.description}`);
 
-      console.log("\n[2/2] Boundary logging (addExpense writes to store + logs via SDK)...");
-      const expense = addExpense(receipt, testFile);
-      console.log(`  OK — saved as expense #${expense.id}, scannedAt: ${expense.scannedAt}`);
+      console.log("\n[2/2] Boundary logging (addScan writes to store + logs via SDK)...");
+      const stored = addScan(receipt, TEST_FILE);
+      console.log(`  OK — saved as scan #${stored.id}, scannedAt: ${stored.scannedAt}`);
 
       console.log("\nTest passed.");
       break;
     }
 
     case "list": {
-      const expenses = listExpenses();
-      printTable(expenses);
+      printTable(listScans());
       break;
     }
 
@@ -102,7 +103,7 @@ async function main() {
       console.log("Usage:");
       console.log("  npm run dev test                Scan receipt_0001.png and verify both APIs");
       console.log("  npm run dev add <receipt.png|folder>   Scan and record a receipt (or all PNGs in a folder)");
-      console.log("  npm run dev list                List all recorded expenses");
+      console.log("  npm run dev list                List all recorded scans");
     }
   }
 }

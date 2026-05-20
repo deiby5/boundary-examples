@@ -1,8 +1,12 @@
 import { z } from "zod";
-import { defineContract, createConsoleLogger, type ContractLogger } from "@withboundary/contract";
+import {
+  createConsoleLogger,
+  defineContract,
+  type ContractLogger,
+} from "@withboundary/contract";
 import { createBoundaryLogger } from "@withboundary/sdk";
 
-export const MODEL = "mistralai/mistral-small-3.2-24b-instruct";
+export const MODEL = process.env.OPENROUTER_MODEL ?? "openai/gpt-4o";
 
 export const logger = createBoundaryLogger({
   apiKey: process.env.BOUNDARY_API_KEY,
@@ -11,15 +15,15 @@ export const logger = createBoundaryLogger({
   model: MODEL + " (node)",
   onError: (err) => console.error("[Boundary] Logger error:", err),
   capture: {
-    inputs: true,
-    outputs: true,
+    inputs: false,
+    outputs: false,
   },
 });
 
 if (logger) {
-  console.log("[Boundary] SDK logger initialised — events will be sent to Boundary.");
+  console.log("[Boundary] SDK logger initialised - events will be sent to Boundary.");
 } else {
-  console.warn("[Boundary] BOUNDARY_API_KEY not set — remote logging disabled (console only).");
+  console.warn("[Boundary] BOUNDARY_API_KEY not set - remote logging disabled (console only).");
 }
 
 const consoleLogger = createConsoleLogger({
@@ -46,7 +50,7 @@ function mergeLoggers<T>(...loggers: (ContractLogger<T> | null | undefined)[]): 
   };
 }
 
-export const receiptSchema = z.object({
+export const receiptScanSchema = z.object({
   vendor: z.string(),
   date: z.string(),
   amount: z.number(),
@@ -66,12 +70,12 @@ export const receiptSchema = z.object({
     .optional(),
 });
 
-export type Receipt = z.infer<typeof receiptSchema>;
+export type ReceiptScanResult = z.infer<typeof receiptScanSchema>;
 
-export const receiptContract = defineContract({
-  name: "receipt-extraction-node",
+export const receiptScanContract = defineContract({
+  name: "receipt-scanner-node",
   logger: mergeLoggers(logger, consoleLogger),
-  schema: receiptSchema,
+  schema: receiptScanSchema,
   rules: [
     {
       name: "positive_amount",

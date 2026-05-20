@@ -1,10 +1,10 @@
 import fs from "fs";
 import path from "path";
-import { receiptContract, type Receipt, MODEL } from "./contract.js";
+import { receiptScanContract, MODEL, type ReceiptScanResult } from "./contract.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const PROMPT = `You are an expense-tracking assistant. Extract the expense details from this receipt image and return a single JSON object with exactly these fields:
+const SYSTEM_PROMPT = `You are a structured receipt data extractor. Read the attached receipt image and return a JSON object with extracted fields.
 
 - vendor (string, required): the merchant or business name — must not be empty
 - date (string, required): date of the transaction in strict YYYY-MM-DD format
@@ -22,20 +22,38 @@ Critical constraints:
 
 Return ONLY the raw JSON object — no markdown code fences, no \`\`\`json, no explanations, no trailing text.`;
 
-export async function scanReceipt(imagePath: string): Promise<Receipt> {
+export async function scanReceipt(imagePath: string): Promise<ReceiptScanResult> {
   const absPath = path.resolve(imagePath);
   if (!fs.existsSync(absPath)) {
     throw new Error(`File not found: ${absPath}`);
+  }
+  if (path.extname(absPath).toLowerCase() !== ".png") {
+    throw new Error(`Unsupported receipt format: ${absPath} (expected .png)`);
   }
 
   const imageData = fs.readFileSync(absPath);
   const base64 = imageData.toString("base64");
   const mimeType = "image/png";
   const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY environment variable is not set.");
+  }
 
-  console.log(`[Boundary] Starting contract run for "${path.basename(imagePath)}"...`);
+  const label = path.basename(absPath);
+  const userContent = [
+    {
+      type: "text",
+      text: "Extract structured receipt data from the attached receipt image.",
+    },
+    {
+      type: "image_url",
+      image_url: { url: `data:${mimeType};base64,${base64}` },
+    },
+  ];
 
-  const result = await receiptContract.accept(async (attempt) => {
+  console.log(`[Boundary] Starting contract run for "${label}"...`);
+
+  const result = await receiptScanContract.accept(async (attempt) => {
     const isRetry = attempt.repairs.length > 0;
     if (isRetry) {
       console.log(`[Boundary] Attempt ${attempt.attempt}/${attempt.maxAttempts} — retrying with ${attempt.repairs.length} repair message(s)`);
@@ -43,27 +61,23 @@ export async function scanReceipt(imagePath: string): Promise<Receipt> {
       console.log(`[Boundary] Attempt ${attempt.attempt}/${attempt.maxAttempts} — sending to model...`);
     }
 
-    const promptText = isRetry
-      ? [PROMPT, ...attempt.repairs.map((r) => typeof r === "string" ? r : (r as { content: string }).content)].join("\n\n")
-      : PROMPT;
+    const systemContent = [
+      SYSTEM_PROMPT,
+      attempt.instructions,
+    ].filter(Boolean).join("\n\n");
+    const repairMessages = attempt.repairs.map((repair) =>
+      typeof repair === "string" ? { role: "user", content: repair } : repair
+    );
 
     const body = {
       model: MODEL,
       messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: promptText },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
-          ],
-        },
+        { role: "system", content: systemContent },
+        { role: "user", content: userContent },
+        ...repairMessages,
       ],
+      temperature: 0,
     };
-    console.log(`[OpenRouter] Request:`, JSON.stringify(body, (_key, value) =>
-      typeof value === "string" && value.startsWith("data:image/")
-        ? `data:${mimeType};base64,<base64_omitted>`
-        : value
-    , 2));
 
     let response: Response;
     try {
@@ -74,30 +88,29 @@ export async function scanReceipt(imagePath: string): Promise<Receipt> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
-      console.error(`[OpenRouter] Request error:`, err instanceof Error ? err.message : String(err));
+      console.error("[OpenRouter] Request error:", err instanceof Error ? err.message : String(err));
       throw err;
     }
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(`[OpenRouter] Error status:`, response.status);
-      console.error(`[OpenRouter] Error body:`, text);
-      throw new Error(`OpenRouter request failed: ${response.status} ${text}`);
+      console.error("[OpenRouter] Error status:", response.status);
+      console.error("[OpenRouter] Error body:", text.slice(0, 500));
+      throw new Error(`OpenRouter request failed: ${response.status} ${text.slice(0, 200)}`);
     }
 
     const data = await response.json();
-    console.log(`[OpenRouter] Response:`, JSON.stringify(data, null, 2));
-
-    const content: string = data.choices[0].message.content ?? "";
+    const content: string = data.choices?.[0]?.message?.content?.trim() ?? "";
     console.log(`[Boundary] Model responded (${content.length} chars)`);
     return content;
   });
 
   if (!result.ok) {
-    console.error(`[Boundary] Contract failed after all attempts:`, result.error.attempts.map((a) => a.issues).flat());
-    throw new Error(`Failed to extract receipt data: ${JSON.stringify(result.error)}`);
+    console.error("[Boundary] Contract failed after all attempts:", result.error.attempts.map((a) => a.issues).flat());
+    throw new Error(`Receipt scan output failed validation: ${result.error.message}`);
   }
 
   console.log(`[Boundary] Contract succeeded in ${result.attempts} attempt(s) (${result.durationMS}ms)`);

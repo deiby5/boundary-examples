@@ -6,8 +6,8 @@ The same application is implemented in both **Node.js/TypeScript** and **Python*
 
 ## How It Works
 
-1. A resume PDF from `fixtures/resumes/` is read locally and encoded for direct file input.
-2. The PDF is sent to OpenRouter with native PDF processing enabled for structured extraction.
+1. A resume PDF from `fixtures/resumes/` is read locally and encoded for file input.
+2. The PDF is sent to OpenRouter with native PDF processing, which forwards the PDF to the selected model instead of pre-parsing it.
 3. The Boundary contract validates the response against a schema and extraction rules.
 4. If validation fails, Boundary generates repair messages and retries the API call with that context.
 5. On success, the validated scan is saved to a local `scans.json` file, which is ignored by git.
@@ -36,6 +36,7 @@ cp .env.example .env
 |---|---|---|
 | `OPENROUTER_API_KEY` | Yes | Authenticates with the OpenRouter API |
 | `BOUNDARY_API_KEY` | No | Enables remote observability via the Boundary SDK |
+| `OPENROUTER_MODEL` | No | Model to test. Defaults to `openai/gpt-4o` |
 
 ## Node.js / TypeScript
 
@@ -50,7 +51,7 @@ npm run dev list
 Key files:
 
 - `node/src/contract.ts` defines the Zod schema, Boundary rules, and loggers.
-- `node/src/scan.ts` sends the PDF directly to OpenRouter and wraps the call in `cvScanContract.accept()`.
+- `node/src/scan.ts` sends the PDF through OpenRouter's native PDF engine and wraps the call in `cvScanContract.accept()`.
 - `node/src/store.ts` persists validated scans locally.
 - `node/src/index.ts` exposes the `test`, `add`, and `list` CLI commands.
 
@@ -67,7 +68,7 @@ python -m src.main list
 Key files:
 
 - `python/src/contract.py` defines the Pydantic model, Boundary rules, and loggers.
-- `python/src/scan.py` sends the PDF directly to OpenRouter and wraps the call in `cv_scan_contract.accept()`.
+- `python/src/scan.py` sends the PDF through OpenRouter's native PDF engine and wraps the call in `cv_scan_contract.accept()`.
 - `python/src/store.py` persists validated scans locally.
 - `python/src/main.py` exposes the `test`, `add`, and `list` CLI commands.
 
@@ -78,7 +79,8 @@ cv-scanner/
 ├── README.md
 ├── .env.example
 ├── fixtures/
-│   └── resumes/
+│   ├── resumes/
+│   └── expected/
 ├── node/
 │   ├── package.json
 │   ├── src/

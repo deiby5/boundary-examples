@@ -80,6 +80,9 @@ export async function scanCv(filePath: string): Promise<CvScanResult> {
   const label = path.basename(absPath);
   const pdfDataUrl = encodePdfDataUrl(absPath);
   const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY environment variable is not set.");
+  }
   const userContent = [
     {
       type: "text",
@@ -94,7 +97,10 @@ export async function scanCv(filePath: string): Promise<CvScanResult> {
     },
   ];
 
-  console.log(`[Boundary] Starting contract run for "${label}"...`);
+  console.log(
+    `[Boundary] Starting contract run for "${label}" ` +
+      `(model: ${MODEL}, PDF engine: native)...`,
+  );
 
   const result = await cvScanContract.accept(async (attempt) => {
     const isRetry = attempt.repairs.length > 0;
@@ -108,13 +114,16 @@ export async function scanCv(filePath: string): Promise<CvScanResult> {
       SYSTEM_PROMPT,
       attempt.instructions,
     ].filter(Boolean).join("\n\n");
+    const repairMessages = attempt.repairs.map((repair) =>
+      typeof repair === "string" ? { role: "user", content: repair } : repair
+    );
 
     const body = {
       model: MODEL,
       messages: [
         { role: "system", content: systemContent },
         { role: "user", content: userContent },
-        ...attempt.repairs,
+        ...repairMessages,
       ],
       plugins: PDF_PROCESSING_PLUGINS,
       temperature: 0,

@@ -2,7 +2,7 @@ import path from "node:path";
 import { config } from "dotenv";
 
 export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-export const DEFAULT_MODEL = "openai/gpt-4o-mini";
+export const DEFAULT_MODEL = "openai/gpt-4o";
 
 export function loadLocalEnv(): void {
   config({ path: path.resolve(process.cwd(), ".env") });

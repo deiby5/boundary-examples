@@ -94,6 +94,17 @@ def main() -> None:
             print(f"    Jobs:     {len(scan.experience)}")
             print(f"    Skills:   {len(scan.skills)}")
 
+            if (
+                scan.extraction_quality == "insufficient"
+                or not (scan.full_name or "").strip()
+                or not scan.experience
+                or not scan.skills
+            ):
+                raise RuntimeError(
+                    "CV smoke test did not extract enough structured data "
+                    "from the sample resume."
+                )
+
             print("\n[2/2] Boundary logging (add_scan writes to store + logs via SDK)...")
             stored = add_scan(scan, test_file)
             print(f"  OK — saved as scan #{stored['id']}, scanned_at: {stored['scanned_at']}")

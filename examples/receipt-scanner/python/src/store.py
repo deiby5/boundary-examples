@@ -2,9 +2,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .contract import Receipt
+from .contract import ReceiptScanResult
 
-DB_PATH = Path(__file__).parent.parent / "expenses.json"
+DB_PATH = Path(__file__).parent.parent / "scans.json"
 
 
 def _load() -> list[dict]:
@@ -13,30 +13,30 @@ def _load() -> list[dict]:
     return json.loads(DB_PATH.read_text())
 
 
-def _save(expenses: list[dict]) -> None:
-    DB_PATH.write_text(json.dumps(expenses, indent=2))
+def _save(scans: list[dict]) -> None:
+    DB_PATH.write_text(json.dumps(scans, indent=2))
 
 
-def add_expense(receipt: Receipt, file: str) -> dict:
-    expenses = _load()
-    expense = {
-        **receipt.model_dump(),
-        "id": len(expenses) + 1,
+def add_scan(scan: ReceiptScanResult, file: str) -> dict:
+    scans = _load()
+    record = {
+        **scan.model_dump(),
+        "id": len(scans) + 1,
         "scanned_at": datetime.now(timezone.utc).isoformat(),
         "file": file,
     }
     print(
-        f"[Boundary] Saving expense #{expense['id']}: {expense['vendor']}"
-        f" — {expense['currency']} {expense['amount']:.2f} ({expense['category']})"
+        f"[Boundary] Saving scan #{record['id']}: {record['vendor']}"
+        f" — {record['currency']} {record['amount']:.2f} ({record['category']})"
     )
-    expenses.append(expense)
-    _save(expenses)
+    scans.append(record)
+    _save(scans)
     print(
-        f"[Boundary] Expense #{expense['id']} written to store"
-        f" (total: {len(expenses)} record(s))"
+        f"[Boundary] Scan #{record['id']} written to store"
+        f" (total: {len(scans)} record(s))"
     )
-    return expense
+    return record
 
 
-def list_expenses() -> list[dict]:
+def list_scans() -> list[dict]:
     return _load()

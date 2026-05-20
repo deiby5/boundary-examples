@@ -14,7 +14,7 @@ from withboundary.contract import (
 )
 from withboundary.sdk import CapturePolicy, create_boundary_logger
 
-MODEL = "openai/gpt-4o-mini"
+MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o")
 MONTH_REGEX = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
@@ -57,7 +57,7 @@ class CvScanResult(BaseModel):
 
 _boundary_logger = create_boundary_logger(
     api_key=os.environ.get("BOUNDARY_API_KEY"),
-    endpoint=os.environ.get("BOUNDARY_API_URL") or os.environ.get("BOUNDARY_ENDPOINT"),
+    endpoint=os.environ.get("BOUNDARY_API_URL"),
     environment="production",
     model=MODEL + " (python)",
     on_error=lambda err: print(f"[Boundary] Logger error: {err}"),

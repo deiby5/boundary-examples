@@ -88,6 +88,17 @@ async function main() {
       console.log(`    Jobs:     ${scan.experience.length}`);
       console.log(`    Skills:   ${scan.skills.length}`);
 
+      if (
+        scan.extraction_quality === "insufficient" ||
+        !scan.full_name?.trim() ||
+        scan.experience.length === 0 ||
+        scan.skills.length === 0
+      ) {
+        throw new Error(
+          "CV smoke test did not extract enough structured data from the sample resume.",
+        );
+      }
+
       console.log("\n[2/2] Boundary logging (addScan writes to store + logs via SDK)...");
       const stored = addScan(scan, TEST_FILE);
       console.log(`  OK — saved as scan #${stored.id}, scannedAt: ${stored.scannedAt}`);
