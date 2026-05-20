@@ -6,8 +6,8 @@ The same application is implemented in both **Node.js/TypeScript** and **Python*
 
 ## How It Works
 
-1. A resume PDF from `fixtures/resumes/` is read and text is extracted locally.
-2. The resume text is sent to OpenRouter for structured extraction.
+1. A resume PDF from `fixtures/resumes/` is read locally and encoded for direct file input.
+2. The PDF is sent to OpenRouter with native PDF processing enabled for structured extraction.
 3. The Boundary contract validates the response against a schema and extraction rules.
 4. If validation fails, Boundary generates repair messages and retries the API call with that context.
 5. On success, the validated scan is saved to a local `scans.json` file, which is ignored by git.
@@ -50,7 +50,7 @@ npm run dev list
 Key files:
 
 - `node/src/contract.ts` defines the Zod schema, Boundary rules, and loggers.
-- `node/src/scan.ts` extracts PDF text and wraps the OpenRouter call in `cvScanContract.accept()`.
+- `node/src/scan.ts` sends the PDF directly to OpenRouter and wraps the call in `cvScanContract.accept()`.
 - `node/src/store.ts` persists validated scans locally.
 - `node/src/index.ts` exposes the `test`, `add`, and `list` CLI commands.
 
@@ -67,7 +67,7 @@ python -m src.main list
 Key files:
 
 - `python/src/contract.py` defines the Pydantic model, Boundary rules, and loggers.
-- `python/src/scan.py` extracts PDF text and wraps the OpenRouter call in `cv_scan_contract.accept()`.
+- `python/src/scan.py` sends the PDF directly to OpenRouter and wraps the call in `cv_scan_contract.accept()`.
 - `python/src/store.py` persists validated scans locally.
 - `python/src/main.py` exposes the `test`, `add`, and `list` CLI commands.
 

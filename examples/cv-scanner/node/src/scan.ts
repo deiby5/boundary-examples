@@ -4,7 +4,16 @@ import { cvScanContract, MODEL, type CvScanResult } from "./contract.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const SYSTEM_PROMPT = `You are a structured CV data extractor. Read resume text and return a JSON object with extracted fields.
+const PDF_PROCESSING_PLUGINS = [
+  {
+    id: "file-parser",
+    pdf: {
+      engine: "native",
+    },
+  },
+];
+
+const SYSTEM_PROMPT = `You are a structured CV data extractor. Read the attached resume PDF and return a JSON object with extracted fields.
 
 Rules:
 - Extract ONLY information explicitly stated in the resume. Do NOT invent employers, dates, skills, or credentials.
@@ -54,25 +63,9 @@ Return ONLY valid JSON with this exact structure, no markdown code fences and no
   "extraction_quality": "complete" | "partial" | "insufficient"
 }`;
 
-function normalizeText(text: string): string {
-  return text
-    .replace(/[ \t\u00a0]+/g, " ")
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-async function extractPdfText(filePath: string): Promise<string> {
+function encodePdfDataUrl(filePath: string): string {
   const buffer = fs.readFileSync(filePath);
-  const pdfParse = (await import("pdf-parse")).default;
-  const result = await pdfParse(buffer);
-  const text = normalizeText(result.text ?? "");
-  if (!text) {
-    throw new Error(`No text extracted from PDF: ${filePath}`);
-  }
-  return text;
+  return `data:application/pdf;base64,${buffer.toString("base64")}`;
 }
 
 export async function scanCv(filePath: string): Promise<CvScanResult> {
@@ -85,9 +78,21 @@ export async function scanCv(filePath: string): Promise<CvScanResult> {
   }
 
   const label = path.basename(absPath);
-  const cv = await extractPdfText(absPath);
+  const pdfDataUrl = encodePdfDataUrl(absPath);
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const userMessage = `## Resume\n\n${cv}`;
+  const userContent = [
+    {
+      type: "text",
+      text: "Extract structured CV data from the attached resume PDF.",
+    },
+    {
+      type: "file",
+      file: {
+        filename: label,
+        file_data: pdfDataUrl,
+      },
+    },
+  ];
 
   console.log(`[Boundary] Starting contract run for "${label}"...`);
 
@@ -108,9 +113,10 @@ export async function scanCv(filePath: string): Promise<CvScanResult> {
       model: MODEL,
       messages: [
         { role: "system", content: systemContent },
-        { role: "user", content: userMessage },
+        { role: "user", content: userContent },
         ...attempt.repairs,
       ],
+      plugins: PDF_PROCESSING_PLUGINS,
       temperature: 0,
     };
 

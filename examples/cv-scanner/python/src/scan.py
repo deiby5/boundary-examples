@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import base64
 import os
-import re
 from pathlib import Path
 
 import httpx
@@ -12,7 +12,16 @@ from .contract import MODEL, CvScanResult, cv_scan_contract
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are a structured CV data extractor. Read resume text and return a JSON object with extracted fields.
+PDF_PROCESSING_PLUGINS = [
+    {
+        "id": "file-parser",
+        "pdf": {
+            "engine": "native",
+        },
+    },
+]
+
+SYSTEM_PROMPT = """You are a structured CV data extractor. Read the attached resume PDF and return a JSON object with extracted fields.
 
 Rules:
 - Extract ONLY information explicitly stated in the resume. Do NOT invent employers, dates, skills, or credentials.
@@ -63,22 +72,9 @@ Return ONLY valid JSON with this exact structure, no markdown code fences and no
 }"""
 
 
-def _normalize_text(text: str) -> str:
-    cleaned = re.sub(r"[ \t\xa0]+", " ", text)
-    cleaned = "\n".join(line.strip() for line in cleaned.split("\n"))
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
-
-
-def extract_pdf_text(file_path: Path) -> str:
-    from pypdf import PdfReader
-
-    reader = PdfReader(file_path)
-    pages = [page.extract_text() or "" for page in reader.pages]
-    text = _normalize_text("\n".join(pages))
-    if not text:
-        raise ValueError(f"No text extracted from PDF: {file_path}")
-    return text
+def encode_pdf_data_url(file_path: Path) -> str:
+    encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
+    return f"data:application/pdf;base64,{encoded}"
 
 
 def scan_cv(file_path: str) -> CvScanResult:
@@ -93,8 +89,20 @@ def scan_cv(file_path: str) -> CvScanResult:
         raise RuntimeError("OPENROUTER_API_KEY environment variable is not set.")
 
     label = path.name
-    cv = extract_pdf_text(path)
-    user_message = f"## Resume\n\n{cv}"
+    pdf_data_url = encode_pdf_data_url(path)
+    user_content = [
+        {
+            "type": "text",
+            "text": "Extract structured CV data from the attached resume PDF.",
+        },
+        {
+            "type": "file",
+            "file": {
+                "filename": label,
+                "file_data": pdf_data_url,
+            },
+        },
+    ]
     print(f'[Boundary] Starting contract run for "{label}"...')
 
     def run_fn(ctx: ContractAttempt) -> str:
@@ -114,9 +122,9 @@ def scan_cv(file_path: str) -> CvScanResult:
             item for item in [SYSTEM_PROMPT, getattr(ctx, "instructions", "")] if item
         )
 
-        messages: list[dict[str, str]] = [
+        messages: list[dict[str, object]] = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": user_message},
+            {"role": "user", "content": user_content},
         ]
         for repair in ctx.repairs:
             content = repair["content"] if isinstance(repair, dict) else str(repair)
@@ -125,6 +133,7 @@ def scan_cv(file_path: str) -> CvScanResult:
         body = {
             "model": MODEL,
             "messages": messages,
+            "plugins": PDF_PROCESSING_PLUGINS,
             "temperature": 0,
         }
 
