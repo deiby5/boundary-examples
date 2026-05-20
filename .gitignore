@@ -6,8 +6,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 expenses.json
+scans.json
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 coverage/
 .coverage
+temp/cv-generator/output/

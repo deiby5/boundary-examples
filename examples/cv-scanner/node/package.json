@@ -1,0 +1,22 @@
+{
+  "name": "boundary-cv-scanner-example",
+  "version": "1.0.0",
+  "description": "AI CV scanner CLI - showcasing @withboundary/contract",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx --env-file=../.env src/index.ts"
+  },
+  "dependencies": {
+    "@withboundary/contract": "latest",
+    "@withboundary/sdk": "^0.5.1",
+    "pdf-parse": "^1.1.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pdf-parse": "^1.1.5",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
